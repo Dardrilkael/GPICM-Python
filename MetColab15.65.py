@@ -6,15 +6,87 @@ import os
 import csv  # Importar o módulo csv para manipulação de arquivos CSV
 import re
 from datetime import datetime, timezone
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QLineEdit, QMessageBox, QGroupBox, QFormLayout, QComboBox, QFileDialog
 )
-from PyQt6.QtCore import pyqtSignal, QObject, QTimer
+from PyQt6.QtCore import pyqtSignal, QObject, QTimer,QSize
 import paho.mqtt.client as mqtt
 from numpy.ma.core import empty
 from PyQt6.QtCore import Qt 
+import requests
+from urllib.parse import urljoin
+
+# Replace with the repository you want (format: owner/repo)
+repo = "Dardrilkael/Arduino-Weather-Station"
+url = f"https://api.github.com/repos/{repo}/releases"
+
+headers = {
+    "Accept": "application/vnd.github+json",
+    # "Authorization": "Bearer YOUR_GITHUB_TOKEN",  # optional
+}
+
+
+import requests
+from requests.exceptions import RequestException
+
+def fetch_files(url):
+    try:
+        # Attempt to fetch the data from the URL
+        response = requests.get(url)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            file_data = response.json()
+
+            # Prepare lists with default "Escolha" as the first option
+            file_names = ["Escolha"] + [file['name'] for file in file_data]
+            download_links = [""] + [urljoin(url, file['url']) for file in file_data]
+            descriptions = [""] + [file.get('description', '') for file in file_data]
+            versions = [""] + [file.get('version', '') for file in file_data]  # Extract version
+            upload_dates = [""] + [file.get('uploadDate', '') for file in file_data]  # Extract uploadDate
+            
+            return {
+                "file_names": file_names,
+                "download_links": download_links,
+                "descriptions": descriptions,
+                "versions": versions,
+                "upload_dates": upload_dates
+            }
+
+        else:
+            print(f"Failed to retrieve data. Status code: {response.status_code}")
+            return {
+                "file_names": ["Escolha"],
+                "download_links": [""],
+                "descriptions": [""],
+                "versions": [""],
+                "upload_dates": [""]
+            }
+
+    except RequestException as e:
+        # Catch any network-related or server-related issues
+        print(f"A network error occurred: {e}")
+        return {
+            "file_names": ["Escolha"],
+            "download_links": [""],
+            "descriptions": [""],
+            "versions": [""],
+            "upload_dates": [""]
+        }
+    except Exception as e:
+        # Catch any other unforeseen exceptions
+        print(f"An unexpected error occurred: {e}")
+        return {
+            "file_names": ["Escolha"],
+            "download_links": [""],
+            "descriptions": [""],
+            "versions": [""],
+            "upload_dates": [""]
+        }
+
+
 
 def timestamp_to_datetime(timestamp):
     if not str.isdigit(str(timestamp)): return timestamp
@@ -85,6 +157,7 @@ class MqttClient(QObject):
         self.publish_json = f"batch/prefeituras/macae/estacoes/{self.estacao}"
         self.response_json = f"file/prefeituras/macae/estacoes/{self.estacao}"
         self.publish_json_rec = f"/prefeituras/macae/estacoes/{self.estacao}"
+        self.dns = f"/dns/ota"
     def connect(self):
         if not self.connected:
             self.client.connect(broker, port, keepalive=60)
@@ -108,7 +181,7 @@ class MqttClient(QObject):
         self.client.subscribe(self.response_json)  # Inscreve-se no tópico de file
         self.client.subscribe(self.response_handshake)
         self.client.subscribe(self.publish_json_rec)
-        
+        self.client.subscribe(self.dns)
         print(f"Inscrito nos tópicos: \n\t{self.response_ota},\n\t{self.response_sys_report},\n\t{self.response_json},\n\t{self.response_handshake},\n\t{self.publish_json_rec}")
 
     def publish_message(self, msg):
@@ -203,8 +276,8 @@ class MainWindow(QWidget):
         self.setGeometry(100, 100, 800, 600)  # Aumentando a altura para acomodar mais caixas
         self.version = "0.0.0"
         self.status_value=3
-        icon = QIcon("nuvem.png")  # Substitua pelo caminho do seu ícone
-        self.setWindowIcon(icon)
+        #icon = QIcon("nuvem.png")  # Substitua pelo caminho do seu ícone
+        #self.setWindowIcon(icon)
         # Centraliza a janela na tela
         screen = QApplication.primaryScreen()
         screen_rect = screen.availableGeometry()
@@ -235,14 +308,15 @@ class MainWindow(QWidget):
         self.conection_label = QLabel('desconectado')
         #connection_layout.addRow(self.conection_label)
         #self.version_label = QLabel('Versao: unkown', self)
+        self.url = ""
 
         button_layout = QHBoxLayout()
 
         self.connect_button = QPushButton("Conectar")
         self.connect_button.setToolTip("Clique neste botão para se conectar a uma estação.")
         self.connect_button.setStyleSheet(style())
-        icon_connect = QIcon("entrar.png")
-        self.connect_button.setIcon(icon_connect)
+        #icon_connect = QIcon("entrar.png")
+        #self.connect_button.setIcon(icon_connect)
         self.connect_button.clicked.connect(self.connect_mqtt)
         button_layout.addWidget(self.connect_button)
 
@@ -250,8 +324,8 @@ class MainWindow(QWidget):
         self.disconnect_button.setToolTip("Clique neste botão para se desconectar da estação.")
         self.disconnect_button.setStyleSheet(
             style2())
-        icon_close = QIcon("sair.png")
-        self.disconnect_button.setIcon(icon_close)
+        #icon_close = QIcon("sair.png")
+        #self.disconnect_button.setIcon(icon_close)
         self.disconnect_button.clicked.connect(self.disconnect_mqtt)
         self.disconnect_button.setEnabled(False)
         button_layout.addWidget(self.disconnect_button)
@@ -271,8 +345,7 @@ class MainWindow(QWidget):
         #Get version
         self.version_button = QPushButton("Obter Versao")
         self.version_button.setToolTip("Clique neste botão para se obter a versão do Firmware da estação.")
-        self.version_button.setStyleSheet(
-            style())
+        self.version_button.setStyleSheet(style())
         self.version_button.clicked.connect(lambda: self.send_command({"cmd": "v"}))  # Alterado para o novo método
         commands_layout.addWidget(self.version_button)
         self.version_label = QLabel('Versao: unkown', self)
@@ -280,22 +353,44 @@ class MainWindow(QWidget):
         
         line_break = QLabel('')
         commands_layout.addWidget(line_break)
-		
-        update_commands_layout = QHBoxLayout()
+        
+
+        update_commands_layout = QVBoxLayout()
+        update_commands_layout_one = QHBoxLayout()
+        update_commands_layout_two = QHBoxLayout()
         # Input fields for update command parameters
         self.update_url_input = QLineEdit()
         self.update_url_input.setPlaceholderText("Cole aqui o nome do binário para atualização")
-        update_commands_layout.addWidget(self.update_url_input)  # Add the URL input to the layout
+        update_commands_layout_one.addWidget(self.update_url_input)  # Add the URL input to the layout
 
+        self.fetch_combo = QComboBox()
+        #return {"file_names": [], "download_links": [], "descriptions": []}
+        self.fetch_combo.setStyleSheet(style_combo())
+        self.fetch_combo.setToolTip("Clique neste botão para obter a versão do binário.")
+        self.fetch_combo.currentIndexChanged.connect(lambda index: {self.update_url_input.setText(self.query["download_links"][index]), self.description_label.setText('Descrição: ' + self.query["descriptions"][index])})
+        update_commands_layout_one.addWidget(self.fetch_combo)
+        icon_base64 = '''
+            iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAYAAAAeP4ixAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFM0lEQVR4nO2aa4hVVRTHfzenO9HE6EzeGQsq7fGht1YYRQSZElk61gT2sKIoUKmsoCcREQP6qS/Vh5AsIwatiFCIIMae9nKsEUenMc2yp5ZZUDOaOScW/Desztx755zrvXO94R8Oc/c+Z6+91l6PvfbaA4fx/8VRwBXAYmAl0A3sAn4HfgN2AD3ACuBx4DIgyyGCI4B2YBXwFxClfP6UYDNEqyqrPx/4yjF1APgM6ABuAC4EWoGxQBNwAjAFuBFYom8PuPFfAnNHU6CLgT7HwBZgAdBSAq0csChGbz1wbsKxJWvhKbeKG4FrYit4EnAbsBR4F9gmP/kZ6AfeA54FbgeOd+MywBxpxWj/DTxWRDum6d5ShDDpP3KTPOkcNSvG1qb0jyHRnOdo1QEPAfv0zetAQ4yXCU6DqTAJ2KqB22XnYRVt9b93zFmEehW4G5gGnAqMl9nZ7+nA/cDqWHD4Tr6TEe3zpc1IvjTWaWKTG5cYLfKBQNAIGU6UmQSC3XJwM7+ksJW+M8bYGmdytvKfq/9DYKLMyWs1EYypdc4BG9Vv8X+3+nco/B4MxgB3AL+K5k7gUr1r1CJFztw2pxXkaX281UWkNmCv+l8DxlE+mCa6RHsAuFL9xwHfqL9XVpFYkJlyxn2yV8PlToglzp7LiSOBFzSHzXWJ+s8GPnEhN5EgWecXD6hvotKMSClIJZEBXnRmZiGdWChOJMh9zhbrRCCE3pUV0kQ+MxvQnJ153o8oiKn2B310tfoWuNAbHL6SaHXRaWOBHXxEQa53TmUrf7TUa32zqDwmuHC82YX71IK8rQ8sIUQbW4jjlYYx7UNrkicvGhWl9gPN6tugARZ2K4lcns0uKlWQa/XyfbXPdJHDfKdmsFiMP6H2IrUtrtcUVovxkHKsUPtWagz9Yvx0tXvUvoDq44wCPmI8D8MuvQx5VUjiLA2vNpoLCGLZxjCEPKpe7ZBtHgqVjjrx8pPLzENGPAyB8XCm2F8Dggzm+zgkhfHnWKqPJvFiZ/qQAUSqBRR09vhzGtXHZPFiBQ3DWS6NqSnME+PPqD1X7TeoMTwX29M61La/NYMxwI86sdqxF3c+ml1oUNqkrfdgKn4JMTOWgedUJBzMU/MqSZBi54Vyokvz3RI7WrxZbFCx9LjFpdp9sZJnpTBd832r/SzjqoztpQiS07EzmNNoaKLBFUGCNtpcZdI2ydSCvKz+gVHShGGZ5uySJrJur7uHERAXJJRgTnHVxWWjUEl5VHP9onsV39eX5KDnBcmpKGbFMXSrFPKvpSOptgxC7FV51jBVtwBD4oOkgviSzHaX2re75PKtMvuKVWyWOyHaXF71tfrtfiYRfGgNaXIkzYTSvtVk97ik7aYymNoMd423R1cSaM4ex0N9WkFCdJrkdtF1LhM+GfjUfdut+41syh37KuAdR+djlWfRLr7e+UWqA14guMmZTZPuRiKpeIpjZL4c0p/YOnVNMFUmWS/nbNbYm4HnlXZErlKz0AWXya4Cv0X3MakQpDe7jMf0VS4EP+icvUFl1bDPpHk2aKc2/zAYzUecSa8t9ahdbLOz1XpY0SMwMSvmH3Z2uRd4CfhCJ7pBOe9O9XVqHwhFDkTDEsDgm0O6n0lzA/YfJEkAz3N+E8kZF8oE02K8xvrrt/6kIbYcyKjgHSJKpD3mA934tquE0ypfGqdFOkcVzQ6d9v5x4y2fuquaVc1pqkb+UYKPDOqUd10FN9jUMEYu0i3XcpnfNtXHduu3Rb9X9E819g84x6Sf5jCoCfwLFGwhNCh9tt0AAAAASUVORK5CYII=
+            '''
+        pixmap = QPixmap()
+        pixmap.loadFromData(base64.b64decode(icon_base64))
+        icon = QIcon(pixmap)
+    
+        update_fetch_button = QPushButton("")
+        update_fetch_button.setIcon(icon)
+        update_fetch_button.setIconSize(QSize(30, 30))
+        update_fetch_button.setStyleSheet(style3())
+        update_fetch_button.clicked.connect(self.update_fetch) # Connect to the fetch_files method
+ 
+        update_commands_layout_one.addWidget(update_fetch_button)
         self.update_button = QPushButton("Atualizar")
-        self.update_button.setStyleSheet(
-            style2())
+        self.update_button.setStyleSheet(style2())
         self.update_button.clicked.connect(self.confirm_update)  # Connect to the confirm_update method
-        update_commands_layout.addWidget(self.update_button)
+        update_commands_layout_one.addWidget(self.update_button)
 
 
         self.status_label = QLabel('Status: Not started', self)
-        update_commands_layout.addWidget(self.status_label)
+        update_commands_layout_one.addWidget(self.status_label)
         # self.update_button.setFixedSize(*button_size)  # Uncomment if you want to set a fixed size
 
         self.reset_button = QPushButton("Resetar")
@@ -305,8 +400,14 @@ class MainWindow(QWidget):
         self.reset_button.clicked.connect(lambda: self.send_command(msg_reset))
         commands_layout.addWidget(self.reset_button)
 
+        #update_commands_layout_two
+        self.description_label = QLabel('Descrição: ', self)
+        
+        update_commands_layout_two.addWidget(self.description_label)
 
-		
+        update_commands_layout.addLayout(update_commands_layout_one)
+        update_commands_layout.addLayout(update_commands_layout_two)
+
         main_commands_layout.addLayout(update_commands_layout)
         main_commands_layout.addLayout(commands_layout)
         commands_group.setLayout(main_commands_layout)
@@ -476,10 +577,14 @@ class MainWindow(QWidget):
         self.disable_all_buttons()
 
     def connect_mqtt(self):
-        #TODO FIX THIS
-        #estacao = 'est'+self.estacao_input.text()
         estacao = self.estacao_input.text()
-        if estacao != 'est':
+
+        # Check if the station name starts with "est" or if it's just a number
+        if not estacao.startswith("est") and estacao.isdigit():
+            estacao = "est" + estacao  # Prepend "est" if it's a number
+
+        if estacao.startswith("est"):  # Now check if it starts with "est"
+            # Proceed with connection
             self.output_sys_report.append(f"Conectando à estação {estacao}...")
             self.mqtt_client = MqttClient(estacao)
             self.mqtt_client.message_signal.connect(self.display_message)
@@ -487,7 +592,9 @@ class MainWindow(QWidget):
             self.enable_all_buttons()
             self.send_command({"cmd": "v"})
         else:
-            self.output_sys_report.append("Por favor, insira o número da estação.")
+            # If it's neither a valid "est" station nor a number
+            self.output_sys_report.append("Por favor, insira um número válido da estação.")
+            self.estacao_input.clear()
 
     def disconnect_mqtt(self):
         if self.mqtt_client:
@@ -505,7 +612,7 @@ class MainWindow(QWidget):
         self.file_metricas_combo.clear()
         self.version = "0.0.0"
         self.status_label.clear()
-        self.update_url_input.clear()
+        #self.update_url_input.clear()
         self.version_label.clear()
         self.status_value = 3
         self.ota_display.clear()
@@ -519,6 +626,10 @@ class MainWindow(QWidget):
         self.mqtt_client.Files = self.mqtt_client.files_falhas 
         self.mqtt_client.filesID = ""
         self.update_values_from_json('{"timestamp": "" , "temperatura": "", "umidade_ar": "", "vel_vento": "", "raj_vento": "", "dir_vento": "", "vol_chuva": "", "pressao": "", "identidade": ""}')
+        self.update_url_input.clear()
+        self.fetch_combo.clear()
+        self.fetch_combo.addItems(self.query["file_names"])
+
     def send_command(self, command):
         #print(f"Appended Command: {command}")
         self.execute_command(command)
@@ -554,10 +665,12 @@ class MainWindow(QWidget):
             widget.setDisabled(True)
         self.exit_button.setEnabled(True)
         self.connect_button.setEnabled(True)
+        self.fetch_combo.setEnabled(False)
     def enable_all_buttons(self):
         # Itera sobre todos os widgets e desativa os botões
         for widget in self.findChildren(QPushButton):
             widget.setDisabled(False)
+        self.fetch_combo.setEnabled(True)
     def send_get_command(self,dir):
                         
         selected_file = self.file_falhas_combo.currentText()  # Obtém o arquivo selecionado no combo box
@@ -589,15 +702,25 @@ class MainWindow(QWidget):
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if reply == QMessageBox.StandardButton.Yes:
-                    binaryVersion = self.update_url_input.text()
+                    binaryVersion = self.update_url_input.text().strip()
+                    
+                    if binaryVersion.startswith("http"):
+                        url = binaryVersion
+                    elif re.match(r"^\d{1,3}(\.\d{1,3}){3}:\d+/.+", binaryVersion):
+                        # Looks like an IP with port and path (e.g. 192.168.0.1:8080/file.bin)
+                        url = f"http://{binaryVersion}"
+                    else:
+                        # Just a filename
+                        url = f"http://update.gpicm-ufrj.tec.br:18000/uploads/{binaryVersion}"
+                    
                     msg_update = {
-                    "cmd": "update",
-                    "url":f"http://dardrikael.duckdns.org:18000/download/{binaryVersion}",
-                    #"url": f"http://update.gpicm-ufrj.tec.br:18000/uploads/{binaryVersion}",
-                    "id": f"{my_counter()}"
+                        "cmd": "update",
+                        "url": url,
+                        "id": f"{my_counter()}"
                     }
                     self.send_command(msg_update)
                     self.status_label.setText('Status: enviado')
+
             else:
                 self.output_sys_report.append("Conecte-se ao broker primeiro.")
             
@@ -692,6 +815,28 @@ class MainWindow(QWidget):
             # Armazenar dados recebidos do tópico batch
             #self.received_batch_data.append(message)  # Armazena dados recebidos do tópico batch
             print(self.file_falhas_combo.currentText())
+        elif topic == self.mqtt_client.dns:
+            self.url = message
+            self.update_fetch()
+
+
+    def update_fetch_middle(self):
+        if not self.url:
+            self.output_sys_report.append("URL não disponível.")
+            return
+        
+        if self.url:
+            self.query = fetch_files(self.url)
+            self.fetch_combo.clear()
+            if self.query["file_names"]:
+                self.fetch_combo.addItems(self.query["file_names"])
+               
+        else:
+            print("URL não disponível.")
+
+    def update_fetch(self):
+        thread = threading.Thread(target=lambda: self.update_fetch_middle())
+        thread.start()
 
     def save_to_csv(self, combo, files):
         file_name = combo.currentText()
@@ -868,6 +1013,78 @@ def style2():
         margin: 0px 3px;
         font-family: 'Roboto', sans-serif;
     }"""
+
+def style_combo():
+    return """
+    QPushButton {
+        font-size: 12px;
+        background-color: #0064C8;
+        color: white;
+        padding: 7px 7px;
+        border: none;
+        border-radius: 8px;
+        margin: 1px 3px;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    QComboBox {
+        font-size: 12px;
+        background-color: #0064C8;
+        color: white;
+        padding: 7px;
+        border: none;
+        border-radius: 8px;
+        margin: 1px 3px;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    QComboBox::drop-down {
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        width: 25px;
+        border-left: none;
+    }
+
+    QComboBox::down-arrow {
+        image: none;
+        width: 0;
+        height: 0;
+        border: solid white;
+        border-width: 5px 5px 0 5px;
+        border-color: white transparent transparent transparent;
+        margin-top: 6px;
+        margin-right: 6px;
+    }
+
+    QComboBox QAbstractItemView {
+        background-color: #f0f0f0;
+        color: black;
+        selection-background-color: #0064C8;
+        selection-color: white;
+        border-radius: 4px;
+        padding: 4px;
+        font-family: 'Roboto', sans-serif;
+    }
+    """
+def style3():
+    return """
+    QPushButton {
+        width: 30px;
+        height: 30px;
+        min-width: 25px;
+        min-height: 25px;
+        max-width: 25px;
+        max-height: 25px;
+        background-color: #0064C8;
+        color: white;
+        border: none;
+        border-radius: 4px;  /* Slight rounding to soften edges */
+        font-size: 12px;
+        font-family: 'Roboto', sans-serif;
+        padding: 0;
+        margin: 2px;
+    }
+    """
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
