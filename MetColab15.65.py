@@ -42,7 +42,8 @@ def fetch_files(url):
 
             # Prepare lists with default "Escolha" as the first option
             file_names = ["Escolha"] + [file['name'] for file in file_data]
-            download_links = [""] + [urljoin(url, file['url']) for file in file_data]
+            download_links = [""] + [urljoin(url, "/admin")+file['url'] for file in file_data]
+            #download_links = [""] + [urljoin(url, "file['url']") for file in file_data]
             descriptions = [""] + [file.get('description', '') for file in file_data]
             versions = [""] + [file.get('version', '') for file in file_data]  # Extract version
             upload_dates = [""] + [file.get('uploadDate', '') for file in file_data]  # Extract uploadDate
