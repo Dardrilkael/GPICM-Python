@@ -42,7 +42,8 @@ def fetch_files(url):
 
             # Prepare lists with default "Escolha" as the first option
             file_names = ["Escolha"] + [file['name'] for file in file_data]
-            download_links = [""] + [urljoin(url, "/admin")+file['url'] for file in file_data]
+            http_base_url = url.replace("https://", "http://")
+            download_links = [""] + [urljoin(http_base_url, "/admin"+file['url']) for file in file_data]
             #download_links = [""] + [urljoin(url, "file['url']") for file in file_data]
             descriptions = [""] + [file.get('description', '') for file in file_data]
             versions = [""] + [file.get('version', '') for file in file_data]  # Extract version
@@ -122,7 +123,7 @@ password = "kancvx8thz9FCN5jyq"
 # Mensagens JSON para comandos MQTT
 '''msg_update = {
     "cmd": "update",
-    "url": "http://update.gpicm-ufrj.tec.br:18000/uploads/versao5.bin",
+    "url": "http://update.gpicm-ufrj.tec.br:18000/uploads/versao11.bin",
     "id": "3"
 }'''
 msg_reset = {"cmd": "r"}
@@ -154,6 +155,7 @@ class MqttClient(QObject):
         self.publish_sys = f"sys/prefeituras/macae/estacoes/{self.estacao}"
         self.response_ota = f"sys-report/prefeituras/macae/estacoes/{self.estacao}/OTA"
         self.response_handshake  = f"sys-report/prefeituras/macae/estacoes/{self.estacao}/handshake"
+        self.response_healthcheck  = f"sys-report/prefeituras/macae/estacoes/{self.estacao}/healthcheck"
         self.response_sys_report = f"sys-report/prefeituras/macae/estacoes/{self.estacao}"
         self.publish_json = f"batch/prefeituras/macae/estacoes/{self.estacao}"
         self.response_json = f"file/prefeituras/macae/estacoes/{self.estacao}"
@@ -181,9 +183,10 @@ class MqttClient(QObject):
         self.client.subscribe(self.response_sys_report)
         self.client.subscribe(self.response_json)  # Inscreve-se no tópico de file
         self.client.subscribe(self.response_handshake)
+        self.client.subscribe(self.response_healthcheck)
         self.client.subscribe(self.publish_json_rec)
         self.client.subscribe(self.dns)
-        print(f"Inscrito nos tópicos: \n\t{self.response_ota},\n\t{self.response_sys_report},\n\t{self.response_json},\n\t{self.response_handshake},\n\t{self.publish_json_rec}")
+        print(f"Inscrito nos tópicos: \n\t{self.response_ota},\n\t{self.response_sys_report},\n\t{self.response_json},\n\t{self.response_handshake},\n\t{self.response_healthcheck},\n\t{self.publish_json_rec}")
 
     def publish_message(self, msg):
         if self.connected:
@@ -354,7 +357,6 @@ class MainWindow(QWidget):
         
         line_break = QLabel('')
         commands_layout.addWidget(line_break)
-        
 
         update_commands_layout = QVBoxLayout()
         update_commands_layout_one = QHBoxLayout()
@@ -807,6 +809,13 @@ class MainWindow(QWidget):
             self.version = json.loads(message).get("version", self.version)
             if self.status_value == 2:
                 self.status_label.setText(self.get_status_message("5"))
+        #elif topic == self.mqtt_client.response_update:
+        elif topic == self.mqtt_client.response_healthcheck:
+            #self.setWaiting(False)
+            self.output_sys_report.append(f"{topic}: {message}")
+           
+
+
         elif topic == self.mqtt_client.response_ota:
             self.setWaiting(False)
             self.ota_display.append(message)
