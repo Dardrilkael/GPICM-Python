@@ -535,7 +535,8 @@ class MainWindow(QWidget):
         self.handshake_display = QTextEdit()
         self.handshake_display.setReadOnly(True)
         self.handshake_display.setMaximumHeight(75)
-        handshake_layout.addRow(QLabel("Handshake Messages:"), self.handshake_display)
+        self.handLabel = QLabel("Handshake Messages:")
+        handshake_layout.addRow(self.handLabel, self.handshake_display)
         self.handshake_group.setLayout(handshake_layout)
 
         # Crie um layout horizontal para os dois grupos
@@ -632,6 +633,7 @@ class MainWindow(QWidget):
         self.update_url_input.clear()
         self.fetch_combo.clear()
         self.fetch_combo.addItems(self.query["file_names"])
+        self.handLabel.setText("Handshake Messages:")
 
     def send_command(self, command):
         #print(f"Appended Command: {command}")
@@ -812,8 +814,8 @@ class MainWindow(QWidget):
         #elif topic == self.mqtt_client.response_update:
         elif topic == self.mqtt_client.response_healthcheck:
             #self.setWaiting(False)
+            self.handLabel.setText(f"Handshake Messages:\nwifiDBM: {json.loads(message).get('wifiDBM', 'No status')}")
             self.output_sys_report.append(f"{topic}: {message}")
-           
 
 
         elif topic == self.mqtt_client.response_ota:
